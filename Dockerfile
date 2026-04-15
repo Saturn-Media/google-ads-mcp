@@ -1,6 +1,7 @@
 # Multi-stage build for Google Ads MCP Server
 
 # Stage 1: Build
+# Cache bust: google-ads-api v23.0.0 (2026-04-15)
 FROM node:24-alpine AS builder
 
 WORKDIR /app
