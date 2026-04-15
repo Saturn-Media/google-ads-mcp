@@ -34,6 +34,7 @@ import { getConversions } from './tools/conversions.js';
 import { getDemographicPerformance } from './tools/demographic-performance.js';
 import { getBudgetAnalysis } from './tools/budget-analysis.js';
 import { exportData } from './tools/data-export.js';
+import { search } from './tools/search.js';
 
 // Extend express-session types
 declare module 'express-session' {
@@ -112,6 +113,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case 'export-data':
         result = await exportData(args);
+        break;
+      case 'search':
+        result = await search(args);
         break;
       default:
         throw new Error(`Unknown tool: ${name}`);

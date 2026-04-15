@@ -17,11 +17,13 @@ import { conversionsTool } from './conversions.js';
 import { demographicPerformanceTool } from './demographic-performance.js';
 import { budgetAnalysisTool } from './budget-analysis.js';
 import { dataExportTool } from './data-export.js';
+import { searchTool } from './search.js';
 
 /**
  * All available MCP tools
  */
 export const tools: Tool[] = [
+  searchTool,
   accountsTool,
   campaignsTool,
   adGroupsTool,

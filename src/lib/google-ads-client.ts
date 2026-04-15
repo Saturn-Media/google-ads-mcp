@@ -5,11 +5,11 @@
  * GAQL query execution, and result formatting.
  */
 
-import { GoogleAdsApi, CustomerInstance } from 'google-ads-api';
+import { GoogleAdsApi, Customer } from 'google-ads-api';
 import { env } from '../config/index.js';
 
 let clientInstance: GoogleAdsApi | null = null;
-let customerInstance: CustomerInstance | null = null;
+let customerInstance: Customer | null = null;
 
 /**
  * Get or create the Google Ads API client singleton
@@ -28,7 +28,7 @@ function getClient(): GoogleAdsApi {
 /**
  * Get or create the customer instance singleton
  */
-function getCustomer(): CustomerInstance {
+function getCustomer(): Customer {
   if (!customerInstance) {
     const client = getClient();
     customerInstance = client.Customer({
@@ -56,6 +56,53 @@ export async function executeQuery(query: string): Promise<any[]> {
       throw new Error(`Google Ads API error: ${error.message}`);
     }
     throw new Error('Unknown error querying Google Ads API');
+  }
+}
+
+/**
+ * Execute a GAQL query for a specific customer account
+ *
+ * Creates a customer instance for the given customer_id using the
+ * same MCC credentials. Allows querying any account accessible
+ * via the login_customer_id.
+ *
+ * @param query - Google Ads Query Language (GAQL) query string
+ * @param customerId - The customer account ID to query (no dashes)
+ * @returns Array of result rows
+ */
+export async function executeQueryForCustomer(query: string, customerId: string): Promise<any[]> {
+  const client = getClient();
+  const customer = client.Customer({
+    customer_id: customerId,
+    login_customer_id: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID,
+    refresh_token: env.GOOGLE_ADS_REFRESH_TOKEN,
+  });
+  try {
+    const results = await customer.query(query);
+    return results;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Google Ads API error: ${error.message}`);
+    }
+    throw new Error('Unknown error querying Google Ads API');
+  }
+}
+
+/**
+ * List all customer accounts accessible via the authenticated credentials
+ *
+ * @returns Array of accessible customer resource names
+ */
+export async function listAccessibleCustomers(): Promise<any> {
+  const client = getClient();
+  try {
+    const response = await client.listAccessibleCustomers(env.GOOGLE_ADS_REFRESH_TOKEN);
+    return response;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Google Ads API error: ${error.message}`);
+    }
+    throw new Error('Unknown error listing accessible customers');
   }
 }
 
