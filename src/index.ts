@@ -8,6 +8,7 @@
  */
 
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import express from 'express';
 import session from 'express-session';
 import cors from 'cors';
@@ -50,88 +51,45 @@ declare module 'express-session' {
 }
 
 /**
- * Initialize MCP server
+ * Create a fresh MCP server instance with all tool handlers registered.
+ * Each session gets its own server+transport pair to avoid state conflicts.
  */
-const server = new Server(
-  {
-    name: 'google-ads-mcp',
-    version: '0.1.0',
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
+function createMCPServer(): Server {
+  const srv = new Server(
+    { name: 'google-ads-mcp', version: '0.1.0' },
+    { capabilities: { tools: {} } }
+  );
 
-/**
- * Register tools/list handler
- */
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
+  srv.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
-/**
- * Register tools/call handler
- */
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  try {
-    let result: string;
-
-    switch (name) {
-      case 'get-account':
-        result = await getAccounts();
-        break;
-      case 'get-campaign-performance':
-        result = await getCampaignPerformance(args);
-        break;
-      case 'get-ad-group-performance':
-        result = await getAdGroupPerformance(args);
-        break;
-      case 'get-ad-performance':
-        result = await getAdPerformance(args);
-        break;
-      case 'get-keyword-performance':
-        result = await getKeywordPerformance(args);
-        break;
-      case 'get-search-terms':
-        result = await getSearchTerms(args);
-        break;
-      case 'get-asset-group-performance':
-        result = await getAssetGroupPerformance(args);
-        break;
-      case 'get-conversions':
-        result = await getConversions(args);
-        break;
-      case 'get-demographic-performance':
-        result = await getDemographicPerformance(args);
-        break;
-      case 'get-budget-analysis':
-        result = await getBudgetAnalysis(args);
-        break;
-      case 'export-data':
-        result = await exportData(args);
-        break;
-      case 'search':
-        result = await search(args);
-        break;
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+  srv.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    try {
+      let result: string;
+      switch (name) {
+        case 'get-account': result = await getAccounts(); break;
+        case 'get-campaign-performance': result = await getCampaignPerformance(args); break;
+        case 'get-ad-group-performance': result = await getAdGroupPerformance(args); break;
+        case 'get-ad-performance': result = await getAdPerformance(args); break;
+        case 'get-keyword-performance': result = await getKeywordPerformance(args); break;
+        case 'get-search-terms': result = await getSearchTerms(args); break;
+        case 'get-asset-group-performance': result = await getAssetGroupPerformance(args); break;
+        case 'get-conversions': result = await getConversions(args); break;
+        case 'get-demographic-performance': result = await getDemographicPerformance(args); break;
+        case 'get-budget-analysis': result = await getBudgetAnalysis(args); break;
+        case 'export-data': result = await exportData(args); break;
+        case 'search': result = await search(args); break;
+        default: throw new Error(`Unknown tool: ${name}`);
+      }
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true };
     }
+  });
 
-    return {
-      content: [{ type: 'text', text: result }],
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return {
-      content: [{ type: 'text', text: `Error: ${errorMessage}` }],
-      isError: true,
-    };
-  }
-});
+  return srv;
+}
 
 /**
  * Initialize access token store
@@ -224,85 +182,76 @@ async function main() {
   // Auth routes
   app.use('/auth', authRoutes);
 
-  // MCP transport — per-request transports with session management
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  // Session store: maps session IDs to transport+server pairs
+  const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: Server }>();
 
   // MCP endpoints
   app.get('/mcp', requireAuthForToolCall, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !transports.has(sessionId)) {
+    const session = sessionId ? sessions.get(sessionId) : undefined;
+    if (!session) {
       res.status(400).json({ error: 'Invalid or missing session ID' });
       return;
     }
-    const transport = transports.get(sessionId)!;
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
-
     try {
-      await transport.handleRequest(req, res);
+      await session.transport.handleRequest(req, res);
     } catch (error) {
       console.error('[MCP] GET /mcp error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Internal server error' });
-      }
+      if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
     }
   });
 
   const mcpBodyParser = express.text({ type: '*/*' });
   app.post('/mcp', mcpBodyParser, requireAuthForToolCall, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    const existing = sessionId ? sessions.get(sessionId) : undefined;
 
-    // Existing session
-    if (sessionId && transports.has(sessionId)) {
-      const transport = transports.get(sessionId)!;
+    if (existing) {
       try {
-        await transport.handleRequest(req, res, req.body);
+        await existing.transport.handleRequest(req, res, req.body);
       } catch (error) {
         console.error('[MCP] POST /mcp error:', error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Internal server error' });
-        }
+        if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
       }
       return;
     }
 
-    // New session — create transport with session ID generator
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      onsessioninitialized: (id) => {
-        transports.set(id, transport);
-        console.error(`[MCP] Session created: ${id}`);
-      },
-    });
-
-    transport.onclose = () => {
-      const id = transport.sessionId;
-      if (id) {
-        transports.delete(id);
-        console.error(`[MCP] Session closed: ${id}`);
-      }
-    };
-
-    await server.connect(transport);
-
+    // New session — fresh server + transport pair
     try {
+      const mcpServer = createMCPServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+        onsessioninitialized: (id) => {
+          sessions.set(id, { transport, server: mcpServer });
+          console.error(`[MCP] Session created: ${id}`);
+        },
+      });
+
+      transport.onclose = () => {
+        const id = transport.sessionId;
+        if (id) {
+          sessions.delete(id);
+          console.error(`[MCP] Session closed: ${id}`);
+        }
+      };
+
+      await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
-      console.error('[MCP] POST /mcp error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Internal server error' });
-      }
+      console.error('[MCP] POST /mcp new session error:', error);
+      if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-  // Handle session cleanup via DELETE
   app.delete('/mcp', async (req, res) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (sessionId && transports.has(sessionId)) {
-      const transport = transports.get(sessionId)!;
-      await transport.handleRequest(req, res);
-      transports.delete(sessionId);
+    const session = sessionId ? sessions.get(sessionId) : undefined;
+    if (session) {
+      await session.transport.handleRequest(req, res);
+      sessions.delete(sessionId!);
     } else {
       res.status(404).json({ error: 'Session not found' });
     }
