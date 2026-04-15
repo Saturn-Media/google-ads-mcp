@@ -224,12 +224,17 @@ async function main() {
   // Auth routes
   app.use('/auth', authRoutes);
 
-  // MCP transport
-  const transport = new StreamableHTTPServerTransport();
-  await server.connect(transport);
+  // MCP transport — per-request transports with session management
+  const transports = new Map<string, StreamableHTTPServerTransport>();
 
   // MCP endpoints
   app.get('/mcp', requireAuthForToolCall, async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    if (!sessionId || !transports.has(sessionId)) {
+      res.status(400).json({ error: 'Invalid or missing session ID' });
+      return;
+    }
+    const transport = transports.get(sessionId)!;
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
@@ -246,6 +251,41 @@ async function main() {
 
   const mcpBodyParser = express.text({ type: '*/*' });
   app.post('/mcp', mcpBodyParser, requireAuthForToolCall, async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+    // Existing session
+    if (sessionId && transports.has(sessionId)) {
+      const transport = transports.get(sessionId)!;
+      try {
+        await transport.handleRequest(req, res, req.body);
+      } catch (error) {
+        console.error('[MCP] POST /mcp error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      }
+      return;
+    }
+
+    // New session — create transport with session ID generator
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: (id) => {
+        transports.set(id, transport);
+        console.error(`[MCP] Session created: ${id}`);
+      },
+    });
+
+    transport.onclose = () => {
+      const id = transport.sessionId;
+      if (id) {
+        transports.delete(id);
+        console.error(`[MCP] Session closed: ${id}`);
+      }
+    };
+
+    await server.connect(transport);
+
     try {
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
@@ -253,6 +293,18 @@ async function main() {
       if (!res.headersSent) {
         res.status(500).json({ error: 'Internal server error' });
       }
+    }
+  });
+
+  // Handle session cleanup via DELETE
+  app.delete('/mcp', async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    if (sessionId && transports.has(sessionId)) {
+      const transport = transports.get(sessionId)!;
+      await transport.handleRequest(req, res);
+      transports.delete(sessionId);
+    } else {
+      res.status(404).json({ error: 'Session not found' });
     }
   });
 
