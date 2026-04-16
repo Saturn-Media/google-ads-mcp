@@ -22,6 +22,7 @@ import { env } from './config/index.js';
 import { requireAuthForToolCall } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import oauthRoutes from './routes/oauth.js';
+import auditSheetsRoutes from './routes/audit-sheets.js';
 import { AccessTokenStore } from './auth/device-code.js';
 import { tools } from './tools/index.js';
 import { getAccounts } from './tools/accounts.js';
@@ -192,6 +193,9 @@ async function main() {
 
   // Auth routes
   app.use('/auth', authRoutes);
+
+  // Audit Sheets REST endpoint (bypasses MCP for data-heavy writes)
+  app.use(auditSheetsRoutes);
 
   // Session store: maps session IDs to transport+server pairs
   const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: Server }>();
