@@ -36,6 +36,10 @@ import { getDemographicPerformance } from './tools/demographic-performance.js';
 import { getBudgetAnalysis } from './tools/budget-analysis.js';
 import { exportData } from './tools/data-export.js';
 import { search } from './tools/search.js';
+import {
+  createSpreadsheet, createSheet, listSheets,
+  getSheetData, updateCells, batchUpdateCells, batchUpdate,
+} from './tools/sheets.js';
 
 // Extend express-session types
 declare module 'express-session' {
@@ -79,6 +83,13 @@ function createMCPServer(): Server {
         case 'get-budget-analysis': result = await getBudgetAnalysis(args); break;
         case 'export-data': result = await exportData(args); break;
         case 'search': result = await search(args); break;
+        case 'sheets-create-spreadsheet': result = await createSpreadsheet(args); break;
+        case 'sheets-create-sheet': result = await createSheet(args); break;
+        case 'sheets-list-sheets': result = await listSheets(args); break;
+        case 'sheets-get-data': result = await getSheetData(args); break;
+        case 'sheets-update-cells': result = await updateCells(args); break;
+        case 'sheets-batch-update-cells': result = await batchUpdateCells(args); break;
+        case 'sheets-batch-update': result = await batchUpdate(args); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       return { content: [{ type: 'text', text: result }] };

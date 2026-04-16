@@ -29,6 +29,7 @@
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "google-ads-api": "^23.0.0",
+    "googleapis": "^171.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

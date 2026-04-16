@@ -18,6 +18,7 @@ import { demographicPerformanceTool } from './demographic-performance.js';
 import { budgetAnalysisTool } from './budget-analysis.js';
 import { dataExportTool } from './data-export.js';
 import { searchTool } from './search.js';
+import { sheetsTools } from './sheets.js';
 
 /**
  * All available MCP tools
@@ -35,4 +36,5 @@ export const tools: Tool[] = [
   demographicPerformanceTool,
   budgetAnalysisTool,
   dataExportTool,
+  ...sheetsTools,
 ];

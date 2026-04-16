@@ -28,6 +28,17 @@ const envSchema = z.object({
     .string()
     .min(1, 'GOOGLE_ADS_CUSTOMER_ID is required (ad account ID, no dashes).'),
 
+  // Google Sheets API credentials (optional — uses same client ID/secret as Ads)
+  GOOGLE_SHEETS_REFRESH_TOKEN: z
+    .string()
+    .optional(),
+  GOOGLE_SHEETS_CLIENT_ID: z
+    .string()
+    .optional(),
+  GOOGLE_SHEETS_CLIENT_SECRET: z
+    .string()
+    .optional(),
+
   // Server configuration
   PORT: z
     .string()
@@ -77,6 +88,9 @@ const parseEnv = () => {
       GOOGLE_ADS_DEVELOPER_TOKEN: process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID,
       GOOGLE_ADS_CUSTOMER_ID: process.env.GOOGLE_ADS_CUSTOMER_ID,
+      GOOGLE_SHEETS_REFRESH_TOKEN: process.env.GOOGLE_SHEETS_REFRESH_TOKEN,
+      GOOGLE_SHEETS_CLIENT_ID: process.env.GOOGLE_SHEETS_CLIENT_ID,
+      GOOGLE_SHEETS_CLIENT_SECRET: process.env.GOOGLE_SHEETS_CLIENT_SECRET,
       PORT: process.env.PORT,
       HOST: process.env.HOST,
       NODE_ENV: process.env.NODE_ENV,
